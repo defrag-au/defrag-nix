@@ -3,10 +3,17 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    # fenix provides per-target rust-std components — required
+    # for `wasm32-wasip2` (mitos wasm modules) which nixpkgs's
+    # bundled rustc doesn't ship out of the box.
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { nixpkgs, ... }:
+    { nixpkgs, fenix, ... }:
     let
       lib = nixpkgs.lib;
       systems = [
@@ -22,9 +29,30 @@
           inherit system;
           config.allowUnfree = true;
         };
+      # Combined rust toolchain with all targets the workspace
+      # currently builds for. Fenix lets us bolt extra stdlib
+      # variants onto the stable rustc — host (native) +
+      # wasm32-unknown-unknown (CF Worker frontends) +
+      # wasm32-wasip2 (mitos modules).
+      rustToolchainFor =
+        system:
+        let
+          fenixPkgs = fenix.packages.${system};
+        in
+        fenixPkgs.combine [
+          fenixPkgs.stable.cargo
+          fenixPkgs.stable.clippy
+          fenixPkgs.stable.rust-analyzer
+          fenixPkgs.stable.rustc
+          fenixPkgs.stable.rustfmt
+          fenixPkgs.stable.rust-src
+          fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
+          fenixPkgs.targets.wasm32-wasip2.stable.rust-std
+        ];
       mkShells =
         pkgs:
         let
+          rustToolchain = rustToolchainFor pkgs.stdenv.hostPlatform.system;
           packageSets = rec {
             shared-cli = with pkgs; [
               curl
@@ -42,13 +70,11 @@
               ]
               ++ lib.optionals stdenv.isDarwin [ libiconv ];
 
-            rust-stable = with pkgs; [
-              cargo
-              clippy
-              rust-analyzer
-              rustc
-              rustfmt
-            ];
+            # Fenix-managed toolchain so we can pick up
+            # wasm32-wasip2 stdlib (used by mitos wasm modules).
+            # Bundled cargo/clippy/rustc/rustfmt come from the
+            # same combined derivation; no separate installs.
+            rust-stable = [ rustToolchain ];
 
             rust-wasm = with pkgs; [
               binaryen
@@ -67,6 +93,15 @@
 
             cardano-aiken = with pkgs; [
               aiken
+            ];
+
+            infra = with pkgs; [
+              terraform
+              opentofu
+              python3
+              cloudflared
+              openssh
+              rsync
             ];
           };
           mkDevShell =
@@ -157,6 +192,15 @@
             extraShellHook = ''
               echo "rust-worker-stack shell ready"
               echo "Includes Rust, WASM, Node, Wrangler, and Aiken tooling."
+            '';
+          };
+
+          infra = mkDevShell {
+            name = "infra";
+            packageGroups = [ "infra" ];
+            extraShellHook = ''
+              echo "infra shell ready"
+              echo "Includes terraform, opentofu, cloudflared, python3, jq."
             '';
           };
         };
