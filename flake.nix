@@ -48,6 +48,9 @@
           fenixPkgs.stable.rust-src
           fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
           fenixPkgs.targets.wasm32-wasip2.stable.rust-std
+          # Static musl target for native services deployed via shiku
+          # (cross-compiled to aarch64-unknown-linux-musl with cargo-zigbuild).
+          fenixPkgs.targets.aarch64-unknown-linux-musl.stable.rust-std
         ];
       mkShells =
         pkgs:
