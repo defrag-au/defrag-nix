@@ -106,6 +106,29 @@
               openssh
               rsync
             ];
+
+            # Shiku deploy tooling. The `shiku` command runs the CLI from the
+            # local checkout via `cargo run`, so it always reflects the latest
+            # source in ~/code/defrag/shiku (override with SHIKU_SRC) — cargo's
+            # incremental build means it recompiles only when shiku changed.
+            # zigbuild/zig do the aarch64-musl cross-compiles shiku drives;
+            # rsync ships releases (macOS openrsync is too old).
+            shiku-deploy =
+              (with pkgs; [
+                cargo-zigbuild
+                zig
+                rsync
+              ])
+              ++ [
+                (pkgs.writeShellScriptBin "shiku" ''
+                  SHIKU_SRC="''${SHIKU_SRC:-$HOME/code/defrag/shiku}"
+                  if [ ! -f "$SHIKU_SRC/Cargo.toml" ]; then
+                    echo "shiku source not found at $SHIKU_SRC (set SHIKU_SRC to override)" >&2
+                    exit 1
+                  fi
+                  exec cargo run --quiet --manifest-path "$SHIKU_SRC/Cargo.toml" -p shiku -- "$@"
+                '')
+              ];
           };
           mkDevShell =
             {
@@ -191,19 +214,26 @@
               "cloudflare-worker"
               "web-node"
               "cardano-aiken"
+              "shiku-deploy"
             ];
             extraShellHook = ''
               echo "rust-worker-stack shell ready"
-              echo "Includes Rust, WASM, Node, Wrangler, and Aiken tooling."
+              echo "Includes Rust, WASM, Node, Wrangler, Aiken, and shiku tooling."
             '';
           };
 
+          # Rust toolchain included: the infra repo carries Rust service
+          # crates (services/claude-agent/bot) and shiku deploys run from it.
           infra = mkDevShell {
             name = "infra";
-            packageGroups = [ "infra" ];
+            packageGroups = [
+              "rust-stable"
+              "infra"
+              "shiku-deploy"
+            ];
             extraShellHook = ''
               echo "infra shell ready"
-              echo "Includes terraform, opentofu, cloudflared, python3, jq."
+              echo "Includes terraform, opentofu, cloudflared, python3, jq, rust, and shiku."
             '';
           };
         };
