@@ -79,15 +79,38 @@
             # same combined derivation; no separate installs.
             rust-stable = [ rustToolchain ];
 
+            # Cargo subcommands, included in every shell. These previously
+            # resolved out of ~/.cargo/bin: cargo searches $CARGO_HOME/bin for
+            # `cargo-*` regardless of PATH, so `cargo nextest` et al silently
+            # ran unpinned, non-nix binaries even inside a dev shell.
+            rust-dev-tools = with pkgs; [
+              cargo-all-features
+              cargo-bloat
+              cargo-expand
+              cargo-insta
+              cargo-nextest
+              cargo-release
+              cargo-workspaces
+            ];
+
             rust-wasm = with pkgs; [
               binaryen
               trunk
               wasm-bindgen-cli
               wasm-pack
+              # Frontend build tooling (leptos + stylance CSS modules) and
+              # wasm inspection — twiggy/wasm-tools for chasing bundle size.
+              cargo-leptos
+              stylance-cli
+              twiggy
+              wasm-tools
             ];
 
             cloudflare-worker = with pkgs; [
               wrangler
+              # workers-rs build step; wrangler.toml would otherwise
+              # `cargo install worker-build` on every clean build.
+              worker-build
             ];
 
             web-node = with pkgs; [
@@ -143,6 +166,7 @@
                     [
                       "shared-cli"
                       "native-libs"
+                      "rust-dev-tools"
                     ]
                     ++ packageGroups
                   )
