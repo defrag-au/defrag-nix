@@ -176,6 +176,27 @@
                 export CARGO_TERM_COLOR=always
                 export RUST_BACKTRACE=1
                 export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig''${PKG_CONFIG_PATH:+:}$PKG_CONFIG_PATH"
+                ${lib.optionalString pkgs.stdenv.isDarwin ''
+                  # Link wasm32 with nixpkgs' wasm-ld instead of the toolchain's
+                  # own rust-lld, which is BROKEN on darwin from rustc 1.98:
+                  # fenix ships it with an rpath resolving to
+                  # lib/rustlib/<host>/lib, and libLLVM.dylib is not there (it
+                  # sits at <toolchain>/lib), so it aborts with SIGABRT and
+                  # "Library not loaded: @rpath/libLLVM.dylib".
+                  #
+                  # How it presents, which is the nasty part: `cargo check
+                  # --target wasm32-unknown-unknown` PASSES, because checking does
+                  # not link. Only a real wasm build fails — so CI (linux, fine)
+                  # and every check command stay green while no one on a mac can
+                  # produce a bundle, and the error reads like a broken project.
+                  #
+                  # Pointing dyld at the real directory also works, but only when
+                  # nothing re-execs in between: a `#!/usr/bin/env bash` build
+                  # script goes through SIP-protected /usr/bin/env, which STRIPS
+                  # DYLD_* from the environment. CARGO_* survives, so the linker
+                  # override is the one that holds through a script.
+                  export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER="${pkgs.lld}/bin/wasm-ld"
+                ''}
                 ${extraShellHook}
               '';
             };
