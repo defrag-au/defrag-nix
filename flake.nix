@@ -60,6 +60,7 @@
             shared-cli = with pkgs; [
               curl
               git
+              gh
               jq
               just
               pkg-config
