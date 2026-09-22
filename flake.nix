@@ -16,11 +16,10 @@
     #
     # `nixpkgs.follows` and `fenix.follows` so the toolkit is built by the same nixpkgs and
     # the same toolchain as everything else here, rather than a second copy of either being
-    # evaluated for it. As a git input it sees COMMITTED state, so a toolkit change reaches
-    # a shell after it is committed here and `nix flake update agent-playbook` is run.
-    # Switch to `github:defrag-au/agent-playbook` once that repo has a remote.
+    # evaluated for it. A flake input sees COMMITTED state, so a toolkit change reaches a
+    # shell after it is committed there and `nix flake update agent-playbook` is run here.
     agent-playbook = {
-      url = "git+file:///Users/damo/code/defrag/agent-playbook";
+      url = "github:defrag-au/agent-playbook";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.fenix.follows = "fenix";
     };
@@ -177,6 +176,9 @@
             # verbs only) and `at-describe` (the catalogue). No member has a write path in
             # any flag or option, which is what makes them safe to allowlist as a prefix.
             # See agent-playbook's docs/inspection-tools.md.
+            #
+            # Every shell gets this group — see `mkDevShell` — rather than each shell asking
+            # for it, because there is no shell where a read-only inspector is unwelcome.
             agent-tools = [ agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.agent-tools ];
           };
           mkDevShell =
@@ -193,6 +195,12 @@
                       "shared-cli"
                       "native-libs"
                       "rust-dev-tools"
+                      # In every shell, not only in the worker stack: the rule that tells an
+                      # agent to reach for `at-peek`/`at-recall` names no repository, so a
+                      # shell the toolkit is missing from is a rule failing where it was
+                      # meant to apply. It is three read-only binaries and costs the shell
+                      # nothing it can do.
+                      "agent-tools"
                     ]
                     ++ packageGroups
                   )
@@ -279,6 +287,7 @@
 
           rust-worker-stack = mkDevShell {
             name = "rust-worker-stack";
+            # `agent-tools` is not listed: it is in the base groups every shell gets now.
             packageGroups = [
               "rust-stable"
               "rust-wasm"
@@ -286,7 +295,6 @@
               "web-node"
               "cardano-aiken"
               "shiku-deploy"
-              "agent-tools"
             ];
             extraShellHook = ''
               echo "rust-worker-stack shell ready"

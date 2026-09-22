@@ -10,17 +10,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1790062618,
-        "narHash": "sha256-D+xvdgoH/rl1Ohg+25CuQenmiJXN2CKOZXrtPt8ugCo=",
-        "ref": "refs/heads/damon-inspection-tools",
-        "rev": "8db0289794a8cd9470b137d78ad2915b43a52b4f",
-        "revCount": 10,
-        "type": "git",
-        "url": "file:///Users/damo/code/defrag/agent-playbook"
+        "lastModified": 1790072788,
+        "narHash": "sha256-p9KCaLgFe1nUrO+29qzm8bGCL4AG2EmCbtvbowaJ+bY=",
+        "owner": "defrag-au",
+        "repo": "agent-playbook",
+        "rev": "2244314fdb17a7974f0b81542b9419bb3d895759",
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "file:///Users/damo/code/defrag/agent-playbook"
+        "owner": "defrag-au",
+        "repo": "agent-playbook",
+        "type": "github"
       }
     },
     "fenix": {
