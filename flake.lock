@@ -1,5 +1,28 @@
 {
   "nodes": {
+    "agent-playbook": {
+      "inputs": {
+        "fenix": [
+          "fenix"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790072788,
+        "narHash": "sha256-p9KCaLgFe1nUrO+29qzm8bGCL4AG2EmCbtvbowaJ+bY=",
+        "owner": "defrag-au",
+        "repo": "agent-playbook",
+        "rev": "2244314fdb17a7974f0b81542b9419bb3d895759",
+        "type": "github"
+      },
+      "original": {
+        "owner": "defrag-au",
+        "repo": "agent-playbook",
+        "type": "github"
+      }
+    },
     "fenix": {
       "inputs": {
         "nixpkgs": [
@@ -39,6 +62,7 @@
     },
     "root": {
       "inputs": {
+        "agent-playbook": "agent-playbook",
         "fenix": "fenix",
         "nixpkgs": "nixpkgs"
       }

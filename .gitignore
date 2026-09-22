@@ -1,0 +1,3 @@
+# `nix build` writes these into the working tree; they are store symlinks, not source.
+/result
+/result-*

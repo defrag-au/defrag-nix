@@ -10,10 +10,23 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # The agent toolkit (at-peek, at-recall, at-describe) is built and packaged by
+    # agent-playbook itself; this flake only wires that package into shells. The derivation
+    # used to live here, which made a public repository's build depend on this one.
+    #
+    # `nixpkgs.follows` and `fenix.follows` so the toolkit is built by the same nixpkgs and
+    # the same toolchain as everything else here, rather than a second copy of either being
+    # evaluated for it. A flake input sees COMMITTED state, so a toolkit change reaches a
+    # shell after it is committed there and `nix flake update agent-playbook` is run here.
+    agent-playbook = {
+      url = "github:defrag-au/agent-playbook";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.fenix.follows = "fenix";
+    };
   };
 
   outputs =
-    { nixpkgs, fenix, ... }:
+    { nixpkgs, fenix, agent-playbook, ... }:
     let
       lib = nixpkgs.lib;
       systems = [
@@ -52,6 +65,10 @@
           # (cross-compiled to aarch64-unknown-linux-musl with cargo-zigbuild).
           fenixPkgs.targets.aarch64-unknown-linux-musl.stable.rust-std
         ];
+      # The agent toolkit's derivation now lives in agent-playbook, beside the source it
+      # builds, and arrives here as a package — see the `agent-playbook` input above and
+      # `packageSets.agent-tools` below. Building it here meant a public repository's
+      # build depended on this one.
       mkShells =
         pkgs:
         let
@@ -153,6 +170,16 @@
                   exec cargo run --quiet --manifest-path "$SHIKU_SRC/Cargo.toml" -p shiku -- "$@"
                 '')
               ];
+
+            # The agent toolkit: `at-peek` (read-only inspection of the working tree),
+            # `at-recall` (read-only inspection of history and state — it runs `git`, read
+            # verbs only) and `at-describe` (the catalogue). No member has a write path in
+            # any flag or option, which is what makes them safe to allowlist as a prefix.
+            # See agent-playbook's docs/inspection-tools.md.
+            #
+            # Every shell gets this group — see `mkDevShell` — rather than each shell asking
+            # for it, because there is no shell where a read-only inspector is unwelcome.
+            agent-tools = [ agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.agent-tools ];
           };
           mkDevShell =
             {
@@ -168,6 +195,12 @@
                       "shared-cli"
                       "native-libs"
                       "rust-dev-tools"
+                      # In every shell, not only in the worker stack: the rule that tells an
+                      # agent to reach for `at-peek`/`at-recall` names no repository, so a
+                      # shell the toolkit is missing from is a rule failing where it was
+                      # meant to apply. It is three read-only binaries and costs the shell
+                      # nothing it can do.
+                      "agent-tools"
                     ]
                     ++ packageGroups
                   )
@@ -254,6 +287,7 @@
 
           rust-worker-stack = mkDevShell {
             name = "rust-worker-stack";
+            # `agent-tools` is not listed: it is in the base groups every shell gets now.
             packageGroups = [
               "rust-stable"
               "rust-wasm"
@@ -264,7 +298,7 @@
             ];
             extraShellHook = ''
               echo "rust-worker-stack shell ready"
-              echo "Includes Rust, WASM, Node, Wrangler, Aiken, and shiku tooling."
+              echo "Includes Rust, WASM, Node, Wrangler, Aiken, shiku and agent tooling."
             '';
           };
 
@@ -285,6 +319,12 @@
         };
     in
     {
+      # Re-exported from agent-playbook, so `nix build .#agent-tools` and a profile
+      # install keep working from here without a second definition of the package.
+      packages = forAllSystems (system: {
+        inherit (agent-playbook.packages.${system}) agent-tools;
+      });
+
       devShells = forAllSystems (system: (mkShells (pkgsFor system)) // {
         default = (mkShells (pkgsFor system)).rust-worker-stack;
       });
