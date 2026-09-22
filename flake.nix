@@ -14,14 +14,15 @@
     # itself; this flake only wires that package into shells. The derivation used to
     # live here, which made a public repository's build depend on this one.
     #
-    # `nixpkgs.follows` so the toolkit is built by the same nixpkgs as everything else
-    # rather than a second copy being evaluated for it. As a git input it sees COMMITTED
-    # state, so a toolkit change reaches a shell after it is committed here and
-    # `nix flake update agent-playbook` is run.
+    # `nixpkgs.follows` and `fenix.follows` so the toolkit is built by the same nixpkgs and
+    # the same toolchain as everything else here, rather than a second copy of either being
+    # evaluated for it. As a git input it sees COMMITTED state, so a toolkit change reaches
+    # a shell after it is committed here and `nix flake update agent-playbook` is run.
     # Switch to `github:defrag-au/agent-playbook` once that repo has a remote.
     agent-playbook = {
       url = "git+file:///Users/damo/code/defrag/agent-playbook";
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.fenix.follows = "fenix";
     };
   };
 

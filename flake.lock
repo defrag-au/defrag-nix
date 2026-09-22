@@ -1,13 +1,20 @@
 {
   "nodes": {
     "agent-playbook": {
-      "flake": false,
+      "inputs": {
+        "fenix": [
+          "fenix"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
       "locked": {
-        "lastModified": 1790044514,
-        "narHash": "sha256-TlXAdcM50m/jlVG7nq7iWhSGEIcD9Q/9l62QPv6dyOg=",
+        "lastModified": 1790048133,
+        "narHash": "sha256-DtPodc1nO1MyNgjeIZFNzkEvKh4uK7cspROGXWmHUjk=",
         "ref": "refs/heads/damon-inspection-tools",
-        "rev": "26f468747aba732d150a37fcdbfd92f1ff228860",
-        "revCount": 4,
+        "rev": "635652d52c7ff1d4e45ab276cec69676427a8c94",
+        "revCount": 7,
         "type": "git",
         "url": "file:///Users/damo/code/defrag/agent-playbook"
       },
