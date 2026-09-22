@@ -10,9 +10,9 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # The agent toolkit (at-peek, at-describe) is built and packaged by agent-playbook
-    # itself; this flake only wires that package into shells. The derivation used to
-    # live here, which made a public repository's build depend on this one.
+    # The agent toolkit (at-peek, at-recall, at-describe) is built and packaged by
+    # agent-playbook itself; this flake only wires that package into shells. The derivation
+    # used to live here, which made a public repository's build depend on this one.
     #
     # `nixpkgs.follows` and `fenix.follows` so the toolkit is built by the same nixpkgs and
     # the same toolchain as everything else here, rather than a second copy of either being
@@ -172,10 +172,11 @@
                 '')
               ];
 
-            # The agent toolkit: `at-peek` (read-only inspection of the working tree)
-            # and `at-describe` (the catalogue). Read-only by construction — no write
-            # path, no subprocess, no network — which is what makes them safe to
-            # allowlist as a prefix. See agent-playbook's docs/inspection-tools.md.
+            # The agent toolkit: `at-peek` (read-only inspection of the working tree),
+            # `at-recall` (read-only inspection of history and state — it runs `git`, read
+            # verbs only) and `at-describe` (the catalogue). No member has a write path in
+            # any flag or option, which is what makes them safe to allowlist as a prefix.
+            # See agent-playbook's docs/inspection-tools.md.
             agent-tools = [ agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.agent-tools ];
           };
           mkDevShell =
