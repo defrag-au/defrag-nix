@@ -10,10 +10,23 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # The agent toolkit (at-peek, at-describe) is built and packaged by agent-playbook
+    # itself; this flake only wires that package into shells. The derivation used to
+    # live here, which made a public repository's build depend on this one.
+    #
+    # `nixpkgs.follows` so the toolkit is built by the same nixpkgs as everything else
+    # rather than a second copy being evaluated for it. As a git input it sees COMMITTED
+    # state, so a toolkit change reaches a shell after it is committed here and
+    # `nix flake update agent-playbook` is run.
+    # Switch to `github:defrag-au/agent-playbook` once that repo has a remote.
+    agent-playbook = {
+      url = "git+file:///Users/damo/code/defrag/agent-playbook";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { nixpkgs, fenix, ... }:
+    { nixpkgs, fenix, agent-playbook, ... }:
     let
       lib = nixpkgs.lib;
       systems = [
@@ -52,6 +65,10 @@
           # (cross-compiled to aarch64-unknown-linux-musl with cargo-zigbuild).
           fenixPkgs.targets.aarch64-unknown-linux-musl.stable.rust-std
         ];
+      # The agent toolkit's derivation now lives in agent-playbook, beside the source it
+      # builds, and arrives here as a package — see the `agent-playbook` input above and
+      # `packageSets.agent-tools` below. Building it here meant a public repository's
+      # build depended on this one.
       mkShells =
         pkgs:
         let
@@ -153,6 +170,12 @@
                   exec cargo run --quiet --manifest-path "$SHIKU_SRC/Cargo.toml" -p shiku -- "$@"
                 '')
               ];
+
+            # The agent toolkit: `at-peek` (read-only inspection of the working tree)
+            # and `at-describe` (the catalogue). Read-only by construction — no write
+            # path, no subprocess, no network — which is what makes them safe to
+            # allowlist as a prefix. See agent-playbook's docs/inspection-tools.md.
+            agent-tools = [ agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.agent-tools ];
           };
           mkDevShell =
             {
@@ -261,10 +284,11 @@
               "web-node"
               "cardano-aiken"
               "shiku-deploy"
+              "agent-tools"
             ];
             extraShellHook = ''
               echo "rust-worker-stack shell ready"
-              echo "Includes Rust, WASM, Node, Wrangler, Aiken, and shiku tooling."
+              echo "Includes Rust, WASM, Node, Wrangler, Aiken, shiku and agent tooling."
             '';
           };
 
@@ -285,6 +309,12 @@
         };
     in
     {
+      # Re-exported from agent-playbook, so `nix build .#agent-tools` and a profile
+      # install keep working from here without a second definition of the package.
+      packages = forAllSystems (system: {
+        inherit (agent-playbook.packages.${system}) agent-tools;
+      });
+
       devShells = forAllSystems (system: (mkShells (pkgsFor system)) // {
         default = (mkShells (pkgsFor system)).rust-worker-stack;
       });
