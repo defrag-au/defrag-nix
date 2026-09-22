@@ -171,15 +171,19 @@
                 '')
               ];
 
-            # The agent toolkit: `at-peek` (read-only inspection of the working tree),
-            # `at-recall` (read-only inspection of history and state — it runs `git`, read
-            # verbs only) and `at-describe` (the catalogue). No member has a write path in
-            # any flag or option, which is what makes them safe to allowlist as a prefix.
-            # See agent-playbook's docs/inspection-tools.md.
+            # The agent tooling, from agent-playbook: the two read-only inspectors —
+            # `at-peek` (the working tree) and `at-recall` (history and state, through `git`
+            # read verbs only) — plus `at-describe` (the catalogue) and `playbook` (the rule
+            # composer, which `check`/`install` a repo's managed block). No member has a write
+            # path in any flag or option except `playbook install`, which writes one file it
+            # names in its output.
             #
             # Every shell gets this group — see `mkDevShell` — rather than each shell asking
             # for it, because there is no shell where a read-only inspector is unwelcome.
-            agent-tools = [ agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.agent-tools ];
+            agent-tooling = [
+              agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.agent-tools
+              agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.playbook
+            ];
           };
           mkDevShell =
             {
@@ -200,7 +204,7 @@
                       # shell the toolkit is missing from is a rule failing where it was
                       # meant to apply. It is three read-only binaries and costs the shell
                       # nothing it can do.
-                      "agent-tools"
+                      "agent-tooling"
                     ]
                     ++ packageGroups
                   )
@@ -319,10 +323,10 @@
         };
     in
     {
-      # Re-exported from agent-playbook, so `nix build .#agent-tools` and a profile
-      # install keep working from here without a second definition of the package.
+      # Re-exported from agent-playbook, so `nix build .#agent-tools`, `nix build .#playbook`
+      # and a profile install keep working from here without a second definition of either.
       packages = forAllSystems (system: {
-        inherit (agent-playbook.packages.${system}) agent-tools;
+        inherit (agent-playbook.packages.${system}) agent-tools playbook;
       });
 
       devShells = forAllSystems (system: (mkShells (pkgsFor system)) // {
