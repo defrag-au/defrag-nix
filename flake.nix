@@ -42,6 +42,13 @@
           inherit system;
           config.allowUnfree = true;
         };
+      # The one derivation this flake defines itself; everything else in `packages` is
+      # re-exported from agent-playbook, and the shells are assembled from nixpkgs. Upstream
+      # publishes no x86_64-darwin binary — see nix/mithril-client.nix — so the shell group and
+      # the package output are guarded rather than left to fail at build time.
+      mithrilClientFor = pkgs: pkgs.callPackage ./nix/mithril-client.nix { };
+      supportsMithril =
+        pkgs: lib.meta.availableOn pkgs.stdenv.hostPlatform (mithrilClientFor pkgs);
       # Combined rust toolchain with all targets the workspace
       # currently builds for. Fenix lets us bolt extra stdlib
       # variants onto the stable rustc — host (native) +
@@ -138,6 +145,11 @@
             cardano-aiken = with pkgs; [
               aiken
             ];
+
+            # Mithril client CLI: fetches a certified Cardano immutable-db snapshot
+            # (`cardano-db download --start/--end`). mitos's bootstrap and market-ledger
+            # drive this binary; it is not a mitos build dependency. Empty on x86_64-darwin.
+            mithril = lib.optionals (supportsMithril pkgs) [ (mithrilClientFor pkgs) ];
 
             infra = with pkgs; [
               terraform
@@ -298,11 +310,12 @@
               "cloudflare-worker"
               "web-node"
               "cardano-aiken"
+              "mithril"
               "shiku-deploy"
             ];
             extraShellHook = ''
               echo "rust-worker-stack shell ready"
-              echo "Includes Rust, WASM, Node, Wrangler, Aiken, shiku and agent tooling."
+              echo "Includes Rust, WASM, Node, Wrangler, Aiken, shiku, the Mithril client and agent tooling."
             '';
           };
 
@@ -323,11 +336,21 @@
         };
     in
     {
-      # Re-exported from agent-playbook, so `nix build .#agent-tools`, `nix build .#playbook`
-      # and a profile install keep working from here without a second definition of either.
-      packages = forAllSystems (system: {
-        inherit (agent-playbook.packages.${system}) agent-tools playbook;
-      });
+      # `agent-tools` and `playbook` are re-exported from agent-playbook, so `nix build
+      # .#agent-tools`, `nix build .#playbook` and a profile install keep working from here
+      # without a second definition of either. `mithril-client` is defined here, in nix/.
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        {
+          inherit (agent-playbook.packages.${system}) agent-tools playbook;
+        }
+        // lib.optionalAttrs (supportsMithril pkgs) {
+          mithril-client = mithrilClientFor pkgs;
+        }
+      );
 
       devShells = forAllSystems (system: (mkShells (pkgsFor system)) // {
         default = (mkShells (pkgsFor system)).rust-worker-stack;
