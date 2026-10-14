@@ -151,6 +151,15 @@
             # drive this binary; it is not a mitos build dependency. Empty on x86_64-darwin.
             mithril = lib.optionals (supportsMithril pkgs) [ (mithrilClientFor pkgs) ];
 
+            # Image inspection for render pipelines. libwebp ships `webpinfo`
+            # (chunk / transform dump — what an encoder actually decided),
+            # `dwebp`/`cwebp` (decode / encode reference) and `webpmux`
+            # (animated frames and timing) — the tools for telling "same pixels,
+            # different bytes" apart without writing a throwaway decoder.
+            media-tools = with pkgs; [
+              libwebp
+            ];
+
             infra = with pkgs; [
               terraform
               opentofu
@@ -312,10 +321,11 @@
               "cardano-aiken"
               "mithril"
               "shiku-deploy"
+              "media-tools"
             ];
             extraShellHook = ''
               echo "rust-worker-stack shell ready"
-              echo "Includes Rust, WASM, Node, Wrangler, Aiken, shiku, the Mithril client and agent tooling."
+              echo "Includes Rust, WASM, Node, Wrangler, Aiken, shiku, the Mithril client, libwebp tools and agent tooling."
             '';
           };
 
