@@ -1,6 +1,17 @@
 {
   description = "Shared Defrag development shells";
 
+  # Compact's own flake trusts IOG's Hydra cache. The compiler is built from
+  # source with Chez and benefits from the substituter; this config applies
+  # only when this flake is the top-level one, not to consumers that take it
+  # as an input.
+  nixConfig = {
+    extra-substituters = [ "https://cache.iog.io" ];
+    extra-trusted-public-keys = [
+      "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     # fenix provides per-target rust-std components — required
@@ -23,10 +34,21 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.fenix.follows = "fenix";
     };
+    # The Compact compiler, from the fork that writes `analyzed-ir.sexp` — the
+    # artifact `midnight-rs` (the Rust SDK) consumes. `midnight-rs` pins
+    # COMPACT_REV to this commit in its Makefile; bump both together. The
+    # official compiler does not emit that artifact.
+    #
+    # Deliberately not following our nixpkgs: the compiler's Chez/nanopass
+    # build is tested against its own pin, and its flake already carries the
+    # nixpkgs that the zkir binaries need.
+    compact = {
+      url = "github:RomarQ/compact/fa2181fbc6dac2135defdb4f55ce10d8332185d5";
+    };
   };
 
   outputs =
-    { nixpkgs, fenix, agent-playbook, ... }:
+    { nixpkgs, fenix, agent-playbook, compact, ... }:
     let
       lib = nixpkgs.lib;
       systems = [
@@ -144,6 +166,15 @@
 
             cardano-aiken = with pkgs; [
               aiken
+            ];
+
+            # The Compact compiler (`compactc`) and the `zkir-v3` binary it
+            # invokes by name, from the fork that emits `analyzed-ir.sexp`.
+            # Keep this out of the shared shells by default; compose it with
+            # the `midnight` shell or add the group to a consumer shell.
+            midnight = [
+              compact.packages.${pkgs.stdenv.hostPlatform.system}.compactc
+              compact.packages.${pkgs.stdenv.hostPlatform.system}.zkir-v3-bin
             ];
 
             # Mithril client CLI: fetches a certified Cardano immutable-db snapshot
@@ -299,6 +330,18 @@
             '';
           };
 
+          midnight = mkDevShell {
+            name = "midnight";
+            packageGroups = [
+              "rust-stable"
+              "midnight"
+            ];
+            extraShellHook = ''
+              echo "Midnight shell ready"
+              echo "Includes compactc and zkir-v3; compactc emits analyzed-ir.sexp with --analyzed-ir."
+            '';
+          };
+
           web-node = mkDevShell {
             name = "web-node";
             packageGroups = [
@@ -356,6 +399,8 @@
         in
         {
           inherit (agent-playbook.packages.${system}) agent-tools playbook;
+          inherit (compact.packages.${system}) compactc;
+          zkir-v3 = compact.packages.${system}.zkir-v3-bin;
         }
         // lib.optionalAttrs (supportsMithril pkgs) {
           mithril-client = mithrilClientFor pkgs;
