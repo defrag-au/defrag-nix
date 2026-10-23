@@ -191,6 +191,17 @@
               libwebp
             ];
 
+            # `adb` and `fastboot` for physical devices, from the same
+            # `androidenv` composition — and the same nixpkgs rev, since
+            # montager's flake imports `defrag-nix.inputs.nixpkgs` — as its
+            # `.#android` shell. One platform-tools version across the org, and
+            # the one already exercised against the real devices. Laziness means
+            # only the platform-tools derivation is realised; the SDK, NDK and
+            # build-tools are never built unless something references them.
+            android-tools = [
+              pkgs.androidenv.androidPkgs.platform-tools
+            ];
+
             infra = with pkgs; [
               terraform
               opentofu
@@ -384,6 +395,17 @@
             extraShellHook = ''
               echo "infra shell ready"
               echo "Includes terraform, opentofu, cloudflared, python3, jq, rust, and shiku."
+            '';
+          };
+
+          # Device tooling only: Google's platform-tools (`adb`, `fastboot`), the
+          # same build montager's `.#android` shell uses. For APK builds enter
+          # that shell instead — it adds the SDK, NDK and both Android ABIs.
+          android-tools = mkDevShell {
+            name = "android-tools";
+            packageGroups = [ "android-tools" ];
+            extraShellHook = ''
+              echo "Android platform tools ready (adb, fastboot) — no SDK/NDK; use montager's .#android for APK builds"
             '';
           };
         };
