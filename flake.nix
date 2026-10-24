@@ -34,6 +34,19 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.fenix.follows = "fenix";
     };
+    # `container-compose` takes *this* flake as an input, for its devshell, so consuming it
+    # as a flake here would be a cycle. `flake = false` takes the source tree without
+    # evaluating its `flake.nix`, which means its inputs are never resolved: the lock pins a
+    # commit, and the binary is built here with the org toolchain. Bump it with
+    # `nix flake update container-compose`; the source and the lock move together.
+    #
+    # `github:` because the repository is public, like agent-playbook. If it ever goes
+    # private this needs `git+ssh` (or an `access-tokens` entry), because the anonymous HTTP
+    # API answers 404 for a repository the caller cannot see.
+    container-compose = {
+      url = "github:defrag-au/container-compose";
+      flake = false;
+    };
     # The Compact compiler, from the fork that writes `analyzed-ir.sexp` — the
     # artifact `midnight-rs` (the Rust SDK) consumes. `midnight-rs` pins
     # COMPACT_REV to this commit in its Makefile; bump both together. The
@@ -48,7 +61,7 @@
   };
 
   outputs =
-    { nixpkgs, fenix, agent-playbook, compact, ... }:
+    { nixpkgs, fenix, agent-playbook, container-compose, compact, ... }:
     let
       lib = nixpkgs.lib;
       systems = [
@@ -64,10 +77,11 @@
           inherit system;
           config.allowUnfree = true;
         };
-      # The two derivations this flake defines itself; everything else in `packages` is
-      # re-exported from agent-playbook, and the shells are assembled from nixpkgs. Upstream
-      # publishes no x86_64-darwin binary — see nix/mithril-client.nix — so the shell group and
-      # the package output are guarded rather than left to fail at build time.
+      # The three derivations this flake defines itself; everything else in `packages` is
+      # re-exported from agent-playbook and compact, and the shells are assembled from
+      # nixpkgs. Upstream publishes no x86_64-darwin binary — see nix/mithril-client.nix — so
+      # the shell group and the package output are guarded rather than left to fail at build
+      # time.
       mithrilClientFor = pkgs: pkgs.callPackage ./nix/mithril-client.nix { };
       # worker-build 0.7.x/0.8.x clears every cached version of a tool before downloading it,
       # into a machine-global cache, with no lock. Parallel builds from different directories
@@ -111,6 +125,53 @@
           # (cross-compiled to aarch64-unknown-linux-musl with cargo-zigbuild).
           fenixPkgs.targets.aarch64-unknown-linux-musl.stable.rust-std
         ];
+      # `makeRustPlatform` wants cargo and rustc as separate arguments; a combined
+      # toolchain carries both, so the same derivation is passed twice. The shape is
+      # agent-playbook's, which packages its own binaries the same way.
+      rustPlatformFor =
+        pkgs:
+        let
+          toolchain = rustToolchainFor pkgs.stdenv.hostPlatform.system;
+        in
+        pkgs.makeRustPlatform {
+          cargo = toolchain;
+          rustc = toolchain;
+        };
+
+      # The stack tool, built from the pinned source tree — see the `container-compose`
+      # input. `doCheck = false` on purpose: the suite drives the binary through a fake
+      # runtime and builds a second binary from inside its own tests, which is not what a
+      # package build should be doing. `cargo build` catches what packaging needs; CI runs
+      # the suite.
+      containerComposeFor =
+        pkgs:
+        let
+          version =
+            (lib.importTOML "${container-compose}/Cargo.toml").workspace.package.version;
+        in
+        (rustPlatformFor pkgs).buildRustPackage {
+          pname = "container-compose";
+          inherit version;
+          src = container-compose;
+          cargoLock.lockFile = "${container-compose}/Cargo.lock";
+          cargoBuildFlags = [
+            "-p"
+            "container-compose-cli"
+          ];
+          doCheck = false;
+          # The workspace root is virtual, so cargo's default install phase has no package
+          # to install. Copy the built binary instead, searching for it: cargoBuildHook
+          # passes `--target <triple>`, so the artefact lands under that directory.
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin
+            install -m755 \
+              "$(find target -maxdepth 3 -type f -name container-compose -perm -u+x | head -n1)" \
+              "$out/bin/container-compose"
+            runHook postInstall
+          '';
+        };
+
       # The agent toolkit's derivation now lives in agent-playbook, beside the source it
       # builds, and arrives here as a package — see the `agent-playbook` input above and
       # `packageSets.agent-tools` below. Building it here meant a public repository's
@@ -268,6 +329,13 @@
               agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.agent-tools
               agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.playbook
             ];
+
+            # The stack tool for Apple's `container` runtime, in every shell for the same
+            # reason the agent tooling is: a stack can live in any repository, and the rule
+            # that says how to run one names no checkout. It builds everywhere and runs only
+            # where the runtime does, so a Linux shell carries an inert binary rather than
+            # missing the command.
+            container-tooling = [ (containerComposeFor pkgs) ];
           };
           mkDevShell =
             {
@@ -289,6 +357,7 @@
                       # meant to apply. It is three read-only binaries and costs the shell
                       # nothing it can do.
                       "agent-tooling"
+                      "container-tooling"
                     ]
                     ++ packageGroups
                   )
@@ -443,6 +512,7 @@
         in
         {
           inherit (agent-playbook.packages.${system}) agent-tools playbook;
+          container-compose = containerComposeFor pkgs;
           inherit (compact.packages.${system}) compactc;
           zkir-v3 = compact.packages.${system}.zkir-v3-bin;
           worker-build-gate = workerBuildGateFor pkgs;
@@ -465,6 +535,13 @@
           pkgs = pkgsFor system;
         in
         {
+          # The packaged binary is only useful if it runs; `--help` is the cheapest proof
+          # that the install phase found the artefact cargo put under `target/<triple>`.
+          container-compose = pkgs.runCommand "container-compose-smoke" { } ''
+            ${containerComposeFor pkgs}/bin/container-compose --help > "$out"
+            grep -q 'plan' "$out"
+          '';
+
           worker-build-gate = pkgs.runCommand "worker-build-gate-test" {
             nativeBuildInputs = [
               (workerBuildGateFor pkgs)
