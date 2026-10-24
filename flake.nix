@@ -64,11 +64,28 @@
           inherit system;
           config.allowUnfree = true;
         };
-      # The one derivation this flake defines itself; everything else in `packages` is
+      # The two derivations this flake defines itself; everything else in `packages` is
       # re-exported from agent-playbook, and the shells are assembled from nixpkgs. Upstream
       # publishes no x86_64-darwin binary — see nix/mithril-client.nix — so the shell group and
       # the package output are guarded rather than left to fail at build time.
       mithrilClientFor = pkgs: pkgs.callPackage ./nix/mithril-client.nix { };
+      # worker-build 0.7.x/0.8.x clears every cached version of a tool before downloading it,
+      # into a machine-global cache, with no lock. Parallel builds from different directories
+      # delete each other's wasm-bindgen download and fail in `step_run_wasm_bindgen` with
+      # ENOENT. The gate takes an OS file lock for the whole build command; see
+      # nix/worker-build-gate.rs for the mechanism and the lock path. It is a single-file
+      # rustc build with no Cargo manifest and no dependencies, so there is nothing to vendor.
+      workerBuildGateFor =
+        pkgs:
+        pkgs.runCommand "worker-build-gate" {
+          nativeBuildInputs = [
+            pkgs.rustc
+            pkgs.stdenv.cc
+          ];
+        } ''
+          mkdir -p $out/bin
+          rustc --edition 2021 -O ${./nix/worker-build-gate.rs} -o $out/bin/worker-build-gate
+        '';
       supportsMithril =
         pkgs: lib.meta.availableOn pkgs.stdenv.hostPlatform (mithrilClientFor pkgs);
       # Combined rust toolchain with all targets the workspace
@@ -158,6 +175,10 @@
               # workers-rs build step; wrangler.toml would otherwise
               # `cargo install worker-build` on every clean build.
               worker-build
+              # Serialises worker-build's machine-global tool cache; parallel
+              # builds from different directories otherwise delete each other's
+              # wasm-bindgen download. See nix/worker-build-gate.rs.
+              (workerBuildGateFor pkgs)
             ];
 
             web-node = with pkgs; [
@@ -413,7 +434,8 @@
     {
       # `agent-tools` and `playbook` are re-exported from agent-playbook, so `nix build
       # .#agent-tools`, `nix build .#playbook` and a profile install keep working from here
-      # without a second definition of either. `mithril-client` is defined here, in nix/.
+      # without a second definition of either. `mithril-client` and `worker-build-gate` are
+      # defined here, in nix/.
       packages = forAllSystems (
         system:
         let
@@ -423,6 +445,7 @@
           inherit (agent-playbook.packages.${system}) agent-tools playbook;
           inherit (compact.packages.${system}) compactc;
           zkir-v3 = compact.packages.${system}.zkir-v3-bin;
+          worker-build-gate = workerBuildGateFor pkgs;
         }
         // lib.optionalAttrs (supportsMithril pkgs) {
           mithril-client = mithrilClientFor pkgs;
@@ -432,5 +455,42 @@
       devShells = forAllSystems (system: (mkShells (pkgsFor system)) // {
         default = (mkShells (pkgsFor system)).rust-worker-stack;
       });
+
+      # The gate's only contract is mutual exclusion, so the check starts one holder
+      # and asserts the next acquisition waited for it. The lock-path override keeps
+      # the test inside the build sandbox.
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        {
+          worker-build-gate = pkgs.runCommand "worker-build-gate-test" {
+            nativeBuildInputs = [
+              (workerBuildGateFor pkgs)
+              pkgs.coreutils
+            ];
+          } ''
+            export WORKER_BUILD_GATE_LOCK="''${TMPDIR:-/tmp}/worker-build-gate.lock"
+            worker-build-gate -- sleep 2 &
+            holder=$!
+            sleep 0.3
+            start=$(date +%s)
+            worker-build-gate -- true
+            end=$(date +%s)
+            wait "$holder"
+            if [ ! -f "$WORKER_BUILD_GATE_LOCK" ]; then
+              echo "worker-build-gate removed its lock file; a third process could bypass it" >&2
+              exit 1
+            fi
+            if [ "$((end - start))" -lt 1 ]; then
+              echo "worker-build-gate did not serialise concurrent commands" >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            printf 'ok\n' > "$out/result"
+          '';
+        }
+      );
     };
 }

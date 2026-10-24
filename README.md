@@ -47,6 +47,23 @@ repos do not need it.
 
 The `infra` and `rust-worker-stack` shells provide a `shiku` command that runs the CLI straight from the local checkout (`~/code/defrag/shiku`, override with `SHIKU_SRC`) via `cargo run` — it rebuilds automatically whenever the shiku source changes, so it's always current with no reinstall step. `cargo-zigbuild`, `zig`, and `rsync` ride along for the cross-compile + release-upload path shiku drives.
 
+### worker-build-gate
+
+`rust-worker-stack` carries `worker-build-gate`, which serialises worker-build's shared tool-cache update. worker-build 0.7.x/0.8.x deletes every cached version of a tool before downloading it, into a machine-global cache, with no lock. Two builds starting cold from different directories delete each other's wasm-bindgen download, and the loser fails with:
+
+```
+Error: Running the wasm-bindgen CLI
+Caused by: No such file or directory (os error 2)
+```
+
+The cache is per machine, not per repo, so the gate locks beside it rather than beside a checkout:
+
+```sh
+worker-build-gate -- worker-build --release
+```
+
+The gate is a single-file Rust binary using `std::fs::File::lock`, so the protection is an OS file lock on both macOS and Linux. The kernel releases it when the process exits, so a killed build leaves no stale lock; the lock file itself stays in place. (macOS's `/usr/bin/lockf` unlinks the lock file on exit, which lets a third process lock a fresh inode and run beside an existing holder — that is why the gate does not use it.) The lock file is `~/Library/Caches/worker-build/.build.lock` on macOS and `${XDG_CACHE_HOME:-$HOME/.cache}/worker-build/.build.lock` on Linux; worker-build's `remove_all_versions` only removes the `wasm-bindgen-*`, `wasm-opt-*` and `esbuild-*` directories, so it survives cache clearing. `nix flake check` runs a two-process serialisation test for it.
+
 ### mithril-client
 
 `rust-worker-stack` also carries the [Mithril](https://mithril.network) client CLI, for pulling a certified Cardano immutable-db snapshot:
