@@ -330,6 +330,16 @@
               agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.playbook
             ];
 
+            # The browser capture tool, from agent-playbook. Kept out of `agent-tooling`
+            # because its promise is the opposite one: it owns a browser process and writes
+            # an image beside a report, where every member above runs nothing and writes
+            # nothing. In every shell anyway, for the reason the inspectors are: the
+            # `browser-shot` skill names no repository, so a shell it is missing from is a
+            # skill that cannot be followed where it was meant to apply.
+            browser-tooling = [
+              agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.browser-shot
+            ];
+
             # The stack tool for Apple's `container` runtime, in every shell for the same
             # reason the agent tooling is: a stack can live in any repository, and the rule
             # that says how to run one names no checkout. It builds everywhere and runs only
@@ -357,6 +367,7 @@
                       # meant to apply. It is three read-only binaries and costs the shell
                       # nothing it can do.
                       "agent-tooling"
+                      "browser-tooling"
                       "container-tooling"
                     ]
                     ++ packageGroups
@@ -501,17 +512,17 @@
         };
     in
     {
-      # `agent-tools` and `playbook` are re-exported from agent-playbook, so `nix build
-      # .#agent-tools`, `nix build .#playbook` and a profile install keep working from here
-      # without a second definition of either. `mithril-client` and `worker-build-gate` are
-      # defined here, in nix/.
+      # `agent-tools`, `browser-shot` and `playbook` are re-exported from agent-playbook, so
+      # `nix build .#agent-tools`, `nix build .#browser-shot` and a profile install keep working
+      # from here without a second definition of any of them. `mithril-client` and
+      # `worker-build-gate` are defined here, in nix/.
       packages = forAllSystems (
         system:
         let
           pkgs = pkgsFor system;
         in
         {
-          inherit (agent-playbook.packages.${system}) agent-tools playbook;
+          inherit (agent-playbook.packages.${system}) agent-tools browser-shot playbook;
           container-compose = containerComposeFor pkgs;
           inherit (compact.packages.${system}) compactc;
           zkir-v3 = compact.packages.${system}.zkir-v3-bin;
