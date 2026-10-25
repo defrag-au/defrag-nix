@@ -418,6 +418,15 @@
             };
         in
         {
+          # Everything every shell already carries — `shared-cli`, `native-libs`,
+          # `rust-dev-tools` and the four tooling groups (`agent-tooling`, `browser-tooling`,
+          # `skill-tooling`, `container-tooling`) — and no language toolchain. For a repository
+          # that holds data rather than code: the fleet inventory, the strategy books, anywhere a
+          # Rust toolchain would be a download nothing in the repository uses.
+          tooling = mkDevShell {
+            name = "tooling";
+          };
+
           rust-stable = mkDevShell {
             name = "rust-stable";
             packageGroups = [ "rust-stable" ];
