@@ -4,3 +4,6 @@
 
 # Local scratch: compiler probes, captures, throwaway output.
 /.tmp
+
+# The realised devshell, written by the `.envrc` on `cd`.
+/.direnv
