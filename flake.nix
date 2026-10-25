@@ -340,6 +340,16 @@
               agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.browser-shot
             ];
 
+            # The skill tooling, from agent-playbook. Kept out of `agent-tooling` for the same
+            # reason: `skill-store` writes a store and fetches from git, where every member of
+            # that group runs nothing, writes nothing and touches no network. In every shell
+            # anyway, because a skill lives in the repository it is about — so any repository
+            # may carry a `.skill-store/`, and `playbook skills sync` shells out to this to
+            # deliver one.
+            skill-tooling = [
+              agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.skill-store
+            ];
+
             # The stack tool for Apple's `container` runtime, in every shell for the same
             # reason the agent tooling is: a stack can live in any repository, and the rule
             # that says how to run one names no checkout. It builds everywhere and runs only
@@ -368,6 +378,10 @@
                       # nothing it can do.
                       "agent-tooling"
                       "browser-tooling"
+                      # `skill-store` writes a store and fetches from git, so it is not in
+                      # `agent-tooling` — but it is here for the same reason: a repository may
+                      # carry a `.skill-store/`, and `playbook skills sync` calls it.
+                      "skill-tooling"
                       "container-tooling"
                     ]
                     ++ packageGroups
@@ -512,17 +526,17 @@
         };
     in
     {
-      # `agent-tools`, `browser-shot` and `playbook` are re-exported from agent-playbook, so
-      # `nix build .#agent-tools`, `nix build .#browser-shot` and a profile install keep working
-      # from here without a second definition of any of them. `mithril-client` and
-      # `worker-build-gate` are defined here, in nix/.
+      # `agent-tools`, `browser-shot`, `skill-store` and `playbook` are re-exported from
+      # agent-playbook, so `nix build .#agent-tools`, `nix build .#skill-store` and a profile
+      # install keep working from here without a second definition of any of them.
+      # `mithril-client` and `worker-build-gate` are defined here, in nix/.
       packages = forAllSystems (
         system:
         let
           pkgs = pkgsFor system;
         in
         {
-          inherit (agent-playbook.packages.${system}) agent-tools browser-shot playbook;
+          inherit (agent-playbook.packages.${system}) agent-tools browser-shot playbook skill-store;
           container-compose = containerComposeFor pkgs;
           inherit (compact.packages.${system}) compactc;
           zkir-v3 = compact.packages.${system}.zkir-v3-bin;
