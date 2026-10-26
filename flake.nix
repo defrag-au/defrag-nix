@@ -340,6 +340,15 @@
               agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.browser-shot
             ];
 
+            # The terminal capture tool, from agent-playbook. Separate from `browser-tooling` for
+            # the same reason that group is separate from `agent-tooling`: it owns a child in a PTY
+            # and writes a screen beside a report. In every shell for the same reason too — the
+            # `tui-shot` rule names no repository, so a shell the binary is missing from is a rule
+            # that cannot be followed where it was meant to apply.
+            tui-tooling = [
+              agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.tui-shot
+            ];
+
             # The skill tooling, from agent-playbook. Kept out of `agent-tooling` for the same
             # reason: `skill-store` writes a store and fetches from git, where every member of
             # that group runs nothing, writes nothing and touches no network. In every shell
@@ -378,6 +387,7 @@
                       # nothing it can do.
                       "agent-tooling"
                       "browser-tooling"
+                      "tui-tooling"
                       # `skill-store` writes a store and fetches from git, so it is not in
                       # `agent-tooling` — but it is here for the same reason: a repository may
                       # carry a `.skill-store/`, and `playbook skills sync` calls it.
@@ -535,8 +545,8 @@
         };
     in
     {
-      # `agent-tools`, `browser-shot`, `skill-store` and `playbook` are re-exported from
-      # agent-playbook, so `nix build .#agent-tools`, `nix build .#skill-store` and a profile
+      # `agent-tools`, `browser-shot`, `tui-shot`, `skill-store` and `playbook` are re-exported
+      # from agent-playbook, so `nix build .#agent-tools`, `nix build .#tui-shot` and a profile
       # install keep working from here without a second definition of any of them.
       # `mithril-client` and `worker-build-gate` are defined here, in nix/.
       packages = forAllSystems (
@@ -545,7 +555,7 @@
           pkgs = pkgsFor system;
         in
         {
-          inherit (agent-playbook.packages.${system}) agent-tools browser-shot playbook skill-store;
+          inherit (agent-playbook.packages.${system}) agent-tools browser-shot tui-shot playbook skill-store;
           container-compose = containerComposeFor pkgs;
           inherit (compact.packages.${system}) compactc;
           zkir-v3 = compact.packages.${system}.zkir-v3-bin;
