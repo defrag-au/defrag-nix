@@ -10,11 +10,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793019656,
-        "narHash": "sha256-E3AFOGfA9eEZlLsN9deuXTI3tPXG0gkznDCHUEVg7f4=",
+        "lastModified": 1793108698,
+        "narHash": "sha256-ivOmL7FbddTVuh4gKTJXBKuOZeL+yS8cVA+o8b0fp0A=",
         "owner": "defrag-au",
         "repo": "agent-playbook",
-        "rev": "4082b93cb140a3dc227e4c25a6fe9bd3d06fd07c",
+        "rev": "afc84d1954c0f4ee45598581a01d5dd0d2051de6",
         "type": "github"
       },
       "original": {
