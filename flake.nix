@@ -21,9 +21,9 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # The agent toolkit (at-peek, at-recall, at-describe) is built and packaged by
-    # agent-playbook itself; this flake only wires that package into shells. The derivation
-    # used to live here, which made a public repository's build depend on this one.
+    # The agent toolkit is built and packaged by agent-playbook itself; this flake only wires
+    # that package into shells. The derivation used to live here, which made a public
+    # repository's build depend on this one.
     #
     # `nixpkgs.follows` and `fenix.follows` so the toolkit is built by the same nixpkgs and
     # the same toolchain as everything else here, rather than a second copy of either being
@@ -316,12 +316,10 @@
                 '')
               ];
 
-            # The agent tooling, from agent-playbook: the two read-only inspectors —
-            # `at-peek` (the working tree) and `at-recall` (history and state, through `git`
-            # read verbs only) — plus `at-describe` (the catalogue) and `playbook` (the rule
-            # composer, which `check`/`install` a repo's managed block). No member has a write
-            # path in any flag or option except `playbook install`, which writes one file it
-            # names in its output.
+            # The agent tooling, from agent-playbook: the read-only `at-*` inspectors,
+            # `at-describe` (the catalogue) and `playbook` (the rule composer, which
+            # `check`/`install` a repo's managed block). No member has a write path in any flag
+            # or option except `playbook install`, which writes one file it names in its output.
             #
             # Every shell gets this group — see `mkDevShell` — rather than each shell asking
             # for it, because there is no shell where a read-only inspector is unwelcome.
@@ -347,6 +345,14 @@
             # that cannot be followed where it was meant to apply.
             tui-tooling = [
               agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.tui-shot
+            ];
+
+            # The image tool, from agent-playbook. Separate from `browser-tooling` and
+            # `tui-tooling` because it owns no process: it reads images and writes derived
+            # views. In every shell for the same reason as the others — the `image-shot`
+            # skill names no repository.
+            image-tooling = [
+              agent-playbook.packages.${pkgs.stdenv.hostPlatform.system}.image-shot
             ];
 
             # The skill tooling, from agent-playbook. Kept out of `agent-tooling` for the same
@@ -381,13 +387,13 @@
                       "native-libs"
                       "rust-dev-tools"
                       # In every shell, not only in the worker stack: the rule that tells an
-                      # agent to reach for `at-peek`/`at-recall` names no repository, so a
+                      # agent to reach for the `at-*` toolkit names no repository, so a
                       # shell the toolkit is missing from is a rule failing where it was
-                      # meant to apply. It is three read-only binaries and costs the shell
-                      # nothing it can do.
+                      # meant to apply.
                       "agent-tooling"
                       "browser-tooling"
                       "tui-tooling"
+                      "image-tooling"
                       # `skill-store` writes a store and fetches from git, so it is not in
                       # `agent-tooling` — but it is here for the same reason: a repository may
                       # carry a `.skill-store/`, and `playbook skills sync` calls it.
@@ -429,10 +435,11 @@
         in
         {
           # Everything every shell already carries — `shared-cli`, `native-libs`,
-          # `rust-dev-tools` and the four tooling groups (`agent-tooling`, `browser-tooling`,
-          # `skill-tooling`, `container-tooling`) — and no language toolchain. For a repository
-          # that holds data rather than code: the fleet inventory, the strategy books, anywhere a
-          # Rust toolchain would be a download nothing in the repository uses.
+          # `rust-dev-tools` and the six tooling groups (`agent-tooling`, `browser-tooling`,
+          # `tui-tooling`, `image-tooling`, `skill-tooling`, `container-tooling`) — and no
+          # language toolchain. For a repository that holds data rather than code: the fleet
+          # inventory, the strategy books, anywhere a Rust toolchain would be a download nothing
+          # in the repository uses.
           tooling = mkDevShell {
             name = "tooling";
           };
@@ -545,9 +552,10 @@
         };
     in
     {
-      # `agent-tools`, `browser-shot`, `tui-shot`, `skill-store` and `playbook` are re-exported
-      # from agent-playbook, so `nix build .#agent-tools`, `nix build .#tui-shot` and a profile
-      # install keep working from here without a second definition of any of them.
+      # `agent-tools`, `browser-shot`, `tui-shot`, `image-shot`, `skill-store` and `playbook` are
+      # re-exported from agent-playbook, so `nix build .#agent-tools`, `nix build .#tui-shot`,
+      # `nix build .#image-shot` and a profile install keep working from here without a second
+      # definition of any of them.
       # `mithril-client` and `worker-build-gate` are defined here, in nix/.
       packages = forAllSystems (
         system:
@@ -555,7 +563,7 @@
           pkgs = pkgsFor system;
         in
         {
-          inherit (agent-playbook.packages.${system}) agent-tools browser-shot tui-shot playbook skill-store;
+          inherit (agent-playbook.packages.${system}) agent-tools browser-shot tui-shot image-shot playbook skill-store;
           container-compose = containerComposeFor pkgs;
           inherit (compact.packages.${system}) compactc;
           zkir-v3 = compact.packages.${system}.zkir-v3-bin;
