@@ -180,6 +180,58 @@
         pkgs:
         let
           rustToolchain = rustToolchainFor pkgs.stdenv.hostPlatform.system;
+          # The Android APK shell's toolchain: the same fenix channel every other
+          # shell builds with, plus the two std targets an APK carries — arm64
+          # (phones) and 32-bit ARM (TVs like the Google TV Streamer run a 32-bit
+          # userspace on a 64-bit chip: `ro.product.cpu.abilist` =
+          # armeabi-v7a,armeabi). Separate from `rust-stable`, which every shell
+          # takes: both std components would otherwise be downloaded by every
+          # repository, including the ones that never build an APK.
+          androidToolchain =
+            fenix.packages.${pkgs.stdenv.hostPlatform.system}.combine [
+              fenix.packages.${pkgs.stdenv.hostPlatform.system}.stable.cargo
+              fenix.packages.${pkgs.stdenv.hostPlatform.system}.stable.clippy
+              fenix.packages.${pkgs.stdenv.hostPlatform.system}.stable.rustc
+              fenix.packages.${pkgs.stdenv.hostPlatform.system}.stable.rustfmt
+              fenix.packages.${pkgs.stdenv.hostPlatform.system}.stable.rust-src
+              fenix.packages.${pkgs.stdenv.hostPlatform.system}.targets.aarch64-linux-android.stable.rust-std
+              fenix.packages.${pkgs.stdenv.hostPlatform.system}.targets.armv7-linux-androideabi.stable.rust-std
+            ];
+          # The SDK and NDK come from nixpkgs' androidenv, never a hand download.
+          # They are unfree and need Google's SDK licence accepted, so the
+          # android shell imports the same nixpkgs again with that config rather
+          # than using `pkgsFor` (which allows unfree but not the licence).
+          # Laziness keeps this out of every other shell's evaluation.
+          androidPkgs = import nixpkgs {
+            system = pkgs.stdenv.hostPlatform.system;
+            config = {
+              allowUnfree = true;
+              android_sdk.accept_license = true;
+            };
+          };
+          androidVersions = {
+            platform = "36";
+            buildTools = "36.0.0";
+            ndk = "29.0.14206865";
+            # The API level the linker targets: the oldest Android an APK from
+            # this shell runs on. Android 11.
+            minApi = "30";
+          };
+          android = androidPkgs.androidenv.composeAndroidPackages {
+            platformVersions = [ androidVersions.platform ];
+            buildToolsVersions = [ androidVersions.buildTools ];
+            includeNDK = true;
+            ndkVersions = [ androidVersions.ndk ];
+            includeCmake = false;
+            includeEmulator = false;
+            includeSystemImages = false;
+          };
+          androidSdk = "${android.androidsdk}/libexec/android-sdk";
+          androidNdk = "${androidSdk}/ndk/${androidVersions.ndk}";
+          # The NDK ships one LLVM per host OS; macOS's is universal but still
+          # named darwin-x86_64.
+          ndkHost = if pkgs.stdenv.hostPlatform.isDarwin then "darwin-x86_64" else "linux-x86_64";
+          ndkBin = "${androidNdk}/toolchains/llvm/prebuilt/${ndkHost}/bin";
           packageSets = rec {
             shared-cli = with pkgs; [
               curl
@@ -273,13 +325,27 @@
               libwebp
             ];
 
+            # The Android SDK, NDK and build-tools, plus the JDK that javac,
+            # keytool and apksigner run on, and Info-ZIP's zip (the dex and
+            # native libraries are appended to aapt2's output before aligning).
+            # A group of its own because the SDK is multi-GB: only the `android`
+            # shell names it. `androidsdk` puts platform-tools (adb, fastboot)
+            # on PATH as well, so there is no second platform-tools to disagree
+            # with it.
+            android-sdk = [
+              android.androidsdk
+              pkgs.jdk17
+              pkgs.zip
+            ];
+
+            # Fenix's stable with the Android std targets — see
+            # `androidToolchain` above for why it is not part of `rust-stable`.
+            android-rust = [ androidToolchain ];
+
             # `adb` and `fastboot` for physical devices, from the same
-            # `androidenv` composition — and the same nixpkgs rev, since
-            # montager's flake imports `defrag-nix.inputs.nixpkgs` — as its
-            # `.#android` shell. One platform-tools version across the org, and
-            # the one already exercised against the real devices. Laziness means
-            # only the platform-tools derivation is realised; the SDK, NDK and
-            # build-tools are never built unless something references them.
+            # `androidenv` composition. Laziness means only the platform-tools
+            # derivation is realised; the SDK, NDK and build-tools are never
+            # built unless something references them.
             android-tools = [
               pkgs.androidenv.androidPkgs.platform-tools
             ];
@@ -539,14 +605,56 @@
             '';
           };
 
-          # Device tooling only: Google's platform-tools (`adb`, `fastboot`), the
-          # same build montager's `.#android` shell uses. For APK builds enter
-          # that shell instead — it adds the SDK, NDK and both Android ABIs.
+          # Device tooling only: Google's platform-tools (`adb`, `fastboot`).
+          # For APK builds enter the `android` shell instead — it adds the SDK,
+          # NDK, build-tools and both Android Rust targets.
           android-tools = mkDevShell {
             name = "android-tools";
             packageGroups = [ "android-tools" ];
             extraShellHook = ''
-              echo "Android platform tools ready (adb, fastboot) — no SDK/NDK; use montager's .#android for APK builds"
+              echo "Android platform tools ready (adb, fastboot) — no SDK/NDK; use the android shell for APK builds"
+            '';
+          };
+
+          # Building a macroquad app as an Android APK. shared-crates'
+          # `ui/macroquad-apk` is the packager (`mq-apk`); this shell is the
+          # toolchain it needs, so no repository carries a copy. Its own shell
+          # so the default shell and the worker build never carry a multi-GB
+          # SDK.
+          #
+          # The two Android targets, the NDK's clang/linker and the C compiler
+          # are wired for both ABIs, so a C dependency in the tree (ring, under
+          # rustls) compiles with no further setup. `ANDROID_PLATFORM`,
+          # `ANDROID_MIN_API` and `ANDROID_HOME` are what `mq-apk` reads; the pin
+          # lives here alone.
+          android = mkDevShell {
+            name = "android";
+            packageGroups = [
+              "android-sdk"
+              "android-rust"
+            ];
+            extraShellHook = ''
+              export ANDROID_HOME="${androidSdk}"
+              export ANDROID_SDK_ROOT="${androidSdk}"
+              export ANDROID_NDK_HOME="${androidNdk}"
+              export NDK_HOME="${androidNdk}"
+              export ANDROID_PLATFORM="${androidVersions.platform}"
+              export ANDROID_MIN_API="${androidVersions.minApi}"
+
+              # Plain `cargo build --target aarch64-linux-android` links, and C
+              # in the tree compiles, with the NDK's clang.
+              export CC_aarch64_linux_android="${ndkBin}/aarch64-linux-android${androidVersions.minApi}-clang"
+              export AR_aarch64_linux_android="${ndkBin}/llvm-ar"
+              export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ndkBin}/aarch64-linux-android${androidVersions.minApi}-clang"
+              # 32-bit ARM: the NDK names its clang `armv7a-…`, Rust its target
+              # `armv7-…`.
+              export CC_armv7_linux_androideabi="${ndkBin}/armv7a-linux-androideabi${androidVersions.minApi}-clang"
+              export AR_armv7_linux_androideabi="${ndkBin}/llvm-ar"
+              export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="${ndkBin}/armv7a-linux-androideabi${androidVersions.minApi}-clang"
+
+              # aapt2, d8, zipalign and apksigner live in build-tools.
+              export PATH="${androidSdk}/build-tools/${androidVersions.buildTools}:$PATH"
+              echo "Android shell: SDK platform ${androidVersions.platform}, build-tools ${androidVersions.buildTools}, NDK ${androidVersions.ndk}, min API ${androidVersions.minApi}"
             '';
           };
         };

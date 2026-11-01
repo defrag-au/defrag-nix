@@ -13,6 +13,7 @@ Shared development shells for Defrag workspaces and repos.
 - `rust-worker-stack`: Shared Defrag workspace shell with Rust, WASM, Node, Wrangler, Aiken, the Mithril client, and shiku tooling.
 - `infra`: Terraform/OpenTofu + cloudflared + Rust + shiku deploy tooling for the infra repo.
 - `android-tools`: Google's `adb` and `fastboot` for physical Android devices — no SDK or NDK.
+- `android`: Android SDK, NDK, build-tools and both Android Rust targets, for packaging a macroquad app as an APK.
 
 ### compactc (Midnight)
 
@@ -80,10 +81,9 @@ It is upstream's **prebuilt release binary**, pinned by hash in `nix/mithril-cli
 (`adb` and `fastboot`), and nothing else. It is not in any other shell, and it carries no
 SDK, NDK or build-tools.
 
-It is deliberately **the same platform-tools build as montager's `.#android` shell**: both
-compose `androidenv` from the same nixpkgs rev (montager imports
-`defrag-nix.inputs.nixpkgs`), currently platform-tools 37.0.0. Laziness means only the
-platform-tools derivation is realised here — the SDK and NDK are not fetched unless
+It is deliberately **the same platform-tools build as the `android` shell**: both compose
+`androidenv` from the same nixpkgs rev, currently platform-tools 37.0.0. Laziness means only
+the platform-tools derivation is realised here — the SDK and NDK are not fetched unless
 something references them. That is the one adb version the real devices have been tested
 against, rather than a second, older one chosen for a smaller closure.
 
@@ -92,16 +92,32 @@ nix develop .#android-tools -c adb devices
 nix develop .#android-tools -c adb pair <host>:<port>   # wireless debugging
 ```
 
-Building an APK needs the SDK, NDK and Android Rust std, which stay in the consumer that
-builds one — montager's `.#android` shell:
-
-```sh
-nix develop ~/code/defrag/montager#android -c <build command>
-```
-
 On macOS, USB debugging needs a data cable and the on-screen authorisation. Wireless
 debugging's port changes when the device sleeps, and macOS's Local Network permission can
 block `adb` (while `curl` still works) — see montager's `docs/design/ANDROID_TV_PLAYER.md`.
+
+### android
+
+`android` is the APK build shell: SDK platform 36, build-tools 36.0.0, NDK 29.0.14206865,
+min API 30, and the Rust toolchain with the `aarch64-linux-android` and
+`armv7-linux-androideabi` std targets. It also wires the NDK's clang and linker for both
+ABIs, so a C dependency in the tree (`ring`, under rustls) compiles with no further setup.
+The SDK is multi-GB, so it lives here rather than in the default shell or the worker build.
+
+A macroquad app is packaged by shared-crates' `mq-apk` (`ui/macroquad-apk` + `tools/mq-apk`):
+
+```sh
+nix develop .#android -c cargo run -q -p mq-apk -- --package au.defrag.example \
+    --library example_mq --crate example-mq --icon icon.png --banner banner.png
+```
+
+A consuming repo carries the one-line `tools/mq-apk` runner, the same shape as its web twin
+`mq-bundle`. `mq-apk --dry-run` resolves everything and prints the steps without an SDK;
+the real run signs with `~/.android/debug.keystore` (created if missing). The shell exports
+`ANDROID_HOME`, `ANDROID_PLATFORM` and `ANDROID_MIN_API`, which is where the pin lives —
+`mq-apk` reads them and falls back to 36/30 only for a dry run outside the shell.
+
+`android` also carries the SDK's platform-tools, so `adb install -r` runs in the same shell.
 
 ## Local usage
 
