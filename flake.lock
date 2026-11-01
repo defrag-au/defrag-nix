@@ -75,11 +75,11 @@
     "container-compose": {
       "flake": false,
       "locked": {
-        "lastModified": 1792830352,
-        "narHash": "sha256-h7b8LDmxgWd4z8rabT4F4ST192OHd3jao/tWoFFWIF4=",
+        "lastModified": 1793506117,
+        "narHash": "sha256-hv4Lz511wQoT8fDOq3UkNcCEGZ9F0wbTI+j9KkhW3ZU=",
         "owner": "defrag-au",
         "repo": "container-compose",
-        "rev": "da456210b5ce714901b8a5814c35a9e9913462bd",
+        "rev": "337b647ee42217ddfd303e1b917611f7ecacbcac",
         "type": "github"
       },
       "original": {
