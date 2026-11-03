@@ -48,6 +48,31 @@ repos do not need it.
 
 The `infra` and `rust-worker-stack` shells provide a `shiku` command that runs the CLI straight from the local checkout (`~/code/defrag/shiku`, override with `SHIKU_SRC`) via `cargo run` — it rebuilds automatically whenever the shiku source changes, so it's always current with no reinstall step. `cargo-zigbuild`, `zig`, and `rsync` ride along for the cross-compile + release-upload path shiku drives.
 
+### sccache
+
+`rust-worker-stack` exports `RUSTC_WRAPPER=sccache`, so rustc output is cached across worktrees and a `target/`
+can be deleted without paying a full rebuild. The cache is keyed by the compiler inputs with the checkout's
+path stripped: `SCCACHE_BASEDIRS` defaults to the directory the shell was entered from, so the same source in
+a different worktree produces the same key.
+
+The shell also exports `CARGO_INCREMENTAL=0`: sccache cannot cache incremental crates, and leaving incremental
+builds on makes every crate a miss while still paying to write the incremental artefacts.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `SCCACHE_DIR` | `${XDG_CACHE_HOME:-$HOME/.cache}/sccache` | A value set before entering the shell wins — that is how a container points at its own Linux cache. |
+| `SCCACHE_CACHE_SIZE` | `10G` | A preset value also wins. |
+| `SCCACHE_BASEDIRS` | the shell's entry directory | Strips the checkout prefix from cache keys, so worktrees share entries. A preset value wins. |
+| `DEFRAG_NO_SCCACHE` | unset | `1` removes `RUSTC_WRAPPER` for the shell and leaves `CARGO_INCREMENTAL` alone. |
+
+```sh
+DEFRAG_NO_SCCACHE=1 direnv exec . cargo build   # one build without the cache
+sccache --show-stats                            # hits, misses, cache size
+```
+
+Proc-macro and link steps are not cached, and the cache is per target triple: the macOS and Linux caches
+do not share entries, so a container gets its own directory.
+
 ### worker-build-gate
 
 `rust-worker-stack` carries `worker-build-gate`, which serialises worker-build's shared tool-cache update. worker-build 0.7.x/0.8.x deletes every cached version of a tool before downloading it, into a machine-global cache, with no lock. Two builds starting cold from different directories delete each other's wasm-bindgen download, and the loser fails with:
