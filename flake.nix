@@ -270,6 +270,14 @@
               cargo-workspaces
             ];
 
+            # A shared rustc cache, so a worktree's target/ can be deleted and
+            # rebuilt without recompiling every dependency. The binary alone
+            # does nothing: the shell that names this group must also export
+            # RUSTC_WRAPPER and turn incremental compilation off, or cargo
+            # bypasses sccache and pays the incremental bookkeeping as well.
+            # See `rust-worker-stack`'s extraShellHook.
+            sccache = [ pkgs.sccache ];
+
             rust-wasm = with pkgs; [
               binaryen
               trunk
@@ -583,10 +591,39 @@
               "mithril"
               "shiku-deploy"
               "media-tools"
+              "sccache"
             ];
             extraShellHook = ''
               echo "rust-worker-stack shell ready"
               echo "Includes Rust, WASM, Node, Wrangler, Aiken, shiku, the Mithril client, libwebp tools and agent tooling."
+
+              # sccache caches rustc output across worktrees and containers.
+              # CARGO_INCREMENTAL is off because sccache cannot cache
+              # incremental crates: leaving it on makes every crate a miss and
+              # still pays for the incremental artefacts.
+              #
+              # SCCACHE_DIR and SCCACHE_CACHE_SIZE keep a value the caller
+              # already set. That is what lets a container point at its own
+              # Linux cache (/sccache) and a host at a shared directory
+              # without a second copy of this block.
+              if [ "''${DEFRAG_NO_SCCACHE:-0}" = "1" ]; then
+                # Leave no wrapper behind, or cargo keeps resolving rustc
+                # through a cache that is meant to be off.
+                if [ "''${RUSTC_WRAPPER:-}" = "sccache" ]; then
+                  unset RUSTC_WRAPPER
+                fi
+              else
+                export RUSTC_WRAPPER=sccache
+                export CARGO_INCREMENTAL=0
+                export SCCACHE_CACHE_SIZE="''${SCCACHE_CACHE_SIZE:-10G}"
+                export SCCACHE_DIR="''${SCCACHE_DIR:-''${XDG_CACHE_HOME:-$HOME/.cache}/sccache}"
+                # Strip the checkout prefix from cache keys, so two worktrees of
+                # the same repository produce the same key for the same source.
+                # $PWD is the directory the shell was entered from — the repo
+                # root for direnv and for `nix develop` run in a checkout. A
+                # caller that already named its basedirs keeps them.
+                export SCCACHE_BASEDIRS="''${SCCACHE_BASEDIRS:-$PWD}"
+              fi
             '';
           };
 
