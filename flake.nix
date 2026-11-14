@@ -100,6 +100,42 @@
           mkdir -p $out/bin
           rustc --edition 2021 -O ${./nix/worker-build-gate.rs} -o $out/bin/worker-build-gate
         '';
+
+      # The static-site and worker build recipes, shared so the cc-wrapper
+      # workaround, the worker-build version mapping and the wasm-bindgen cache
+      # gate reach every repo at once instead of via copy-paste. They install as
+      # `build-site` and `build-worker` because wrangler's [build].command is a
+      # shell string run from the worker's directory.
+      #
+      # zola and tailwindcss are runtimeInputs on purpose: pinning them here is
+      # what makes a site build identical across repos. cargo and rustc are
+      # deliberately NOT inputs — they must come from the consumer's fenix
+      # toolchain, or this derivation would shadow the shell's own.
+      buildSiteFor =
+        pkgs:
+        pkgs.writeShellApplication {
+          name = "build-site";
+          runtimeInputs = [
+            pkgs.zola
+            pkgs.tailwindcss_4
+            pkgs.jq
+            pkgs.coreutils
+          ];
+          text = builtins.readFile ./nix/build-site.sh;
+        };
+
+      buildWorkerFor =
+        pkgs:
+        pkgs.writeShellApplication {
+          name = "build-worker";
+          runtimeInputs = [
+            pkgs.jq
+            pkgs.coreutils
+          ];
+          # Installs the worker-build that matches the consumer's `worker` pin at
+          # build time, so it is resolved from the lock rather than pinned here.
+          text = builtins.readFile ./nix/build-worker.sh;
+        };
       supportsMithril =
         pkgs: lib.meta.availableOn pkgs.stdenv.hostPlatform (mithrilClientFor pkgs);
       # Combined rust toolchain with all targets the workspace
@@ -300,6 +336,11 @@
               # builds from different directories otherwise delete each other's
               # wasm-bindgen download. See nix/worker-build-gate.rs.
               (workerBuildGateFor pkgs)
+              # The shared build recipes. A repo's wrangler.toml names these:
+              #   [build]
+              #   command = "build-site && build-worker"
+              (buildSiteFor pkgs)
+              (buildWorkerFor pkgs)
             ];
 
             web-node = with pkgs; [
@@ -713,6 +754,8 @@
           inherit (compact.packages.${system}) compactc;
           zkir-v3 = compact.packages.${system}.zkir-v3-bin;
           worker-build-gate = workerBuildGateFor pkgs;
+          build-site = buildSiteFor pkgs;
+          build-worker = buildWorkerFor pkgs;
         }
         // lib.optionalAttrs (supportsMithril pkgs) {
           mithril-client = mithrilClientFor pkgs;
