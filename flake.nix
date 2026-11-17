@@ -312,6 +312,9 @@
             rust-dev-tools = with pkgs; [
               cargo-all-features
               cargo-bloat
+              # The supply-chain gate, so `cargo deny check advisories bans
+              # sources` is the same check CI runs and can be run locally.
+              cargo-deny
               cargo-expand
               cargo-insta
               cargo-nextest
