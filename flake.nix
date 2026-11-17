@@ -216,6 +216,19 @@
         pkgs:
         let
           rustToolchain = rustToolchainFor pkgs.stdenv.hostPlatform.system;
+          # worker-build 0.8.7 (the version nixpkgs 2026-11-13 ships) fails its own
+          # build: the vendored `zstd-sys` crate needs libzstd at build time and the
+          # derivation does not declare it, so `nix develop` dies in `nix-shell-env`
+          # with "Package libzstd was not found". Add the input here rather than
+          # vendoring the package; drop it when upstream declares it.
+          #
+          # 0.8.7 arrived with the nixpkgs bump that brought wrangler 4.156.0, which
+          # Workers Issues needs (>= 4.134.0 for `[observability.issues]`).
+          workerBuildFor =
+            pkgSet:
+            pkgSet.worker-build.overrideAttrs (old: {
+              buildInputs = (old.buildInputs or [ ]) ++ [ pkgSet.zstd ];
+            });
           # The Android APK shell's toolchain: the same fenix channel every other
           # shell builds with, plus the two std targets an APK carries — arm64
           # (phones) and 32-bit ARM (TVs like the Google TV Streamer run a 32-bit
@@ -331,7 +344,7 @@
               wrangler
               # workers-rs build step; wrangler.toml would otherwise
               # `cargo install worker-build` on every clean build.
-              worker-build
+              (workerBuildFor pkgs)
               # Serialises worker-build's machine-global tool cache; parallel
               # builds from different directories otherwise delete each other's
               # wasm-bindgen download. See nix/worker-build-gate.rs.
