@@ -674,6 +674,18 @@
                 export CARGO_INCREMENTAL=0
                 export SCCACHE_CACHE_SIZE="''${SCCACHE_CACHE_SIZE:-10G}"
                 export SCCACHE_DIR="''${SCCACHE_DIR:-''${XDG_CACHE_HOME:-$HOME/.cache}/sccache}"
+                # One daemon per checkout. The cache stays shared, but a server
+                # speaks one sccache protocol: a repository whose flake pins a
+                # different version (0.15 vs 0.19) must not answer this one's
+                # client, or every compile fails with a response it cannot
+                # decode. A caller that names its own socket keeps it.
+                if [ -z "''${SCCACHE_SERVER_UDS:-}" ]; then
+                  # The checkout root, so a shell entered in a subdirectory shares
+                  # the repository's daemon; fall back to the entry directory.
+                  _sccache_root="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
+                  export SCCACHE_SERVER_UDS="''${SCCACHE_DIR%/}/server-$(printf '%s' "$_sccache_root" | cksum | cut -d' ' -f1).sock"
+                  unset _sccache_root
+                fi
                 # Strip the checkout prefix from cache keys, so two worktrees of
                 # the same repository produce the same key for the same source.
                 # $PWD is the directory the shell was entered from — the repo

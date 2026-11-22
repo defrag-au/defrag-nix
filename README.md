@@ -58,11 +58,18 @@ a different worktree produces the same key.
 The shell also exports `CARGO_INCREMENTAL=0`: sccache cannot cache incremental crates, and leaving incremental
 builds on makes every crate a miss while still paying to write the incremental artefacts.
 
+The daemon is **per checkout**, not per host: `SCCACHE_SERVER_UDS` defaults to a socket under the cache
+directory named from the checkout root (the git top level, or the entry directory outside one). The cache
+entries stay shared, but two repositories whose devshells pin different sccache versions cannot answer
+each other's client — 0.15 and 0.19 reject each other's compile responses, which otherwise fails every
+rustc call with an opaque decode error.
+
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SCCACHE_DIR` | `${XDG_CACHE_HOME:-$HOME/.cache}/sccache` | A value set before entering the shell wins — that is how a container points at its own Linux cache. |
 | `SCCACHE_CACHE_SIZE` | `10G` | A preset value also wins. |
 | `SCCACHE_BASEDIRS` | the shell's entry directory | Strips the checkout prefix from cache keys, so worktrees share entries. A preset value wins. |
+| `SCCACHE_SERVER_UDS` | `<SCCACHE_DIR>/server-<checkout-root checksum>.sock` | One daemon per checkout, so a repo pinning another sccache version cannot answer this one's client. A preset value wins. |
 | `DEFRAG_NO_SCCACHE` | unset | `1` removes `RUSTC_WRAPPER` for the shell and leaves `CARGO_INCREMENTAL` alone. |
 
 ```sh

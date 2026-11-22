@@ -16,6 +16,14 @@
 #
 # SKIP_SITE=1 bypasses the build for a worker-only deploy. Wrangler's [assets]
 # still expects dist/ to exist, so an empty placeholder is left behind.
+#
+# SITE_BASE_URL overrides config.toml's base_url for one build. A property whose
+# dev environment lives on another host sets it in that environment's build
+# command, so absolute URLs — og:image above all, which crawlers will not
+# resolve relatively — point at a host that actually serves this bundle:
+#
+#   [env.dev.build]
+#   command = "SITE_BASE_URL=https://dev.example.xyz build-site && build-worker"
 
 SITE_DIR="$PWD"
 DIST_DIR="$SITE_DIR/dist"
@@ -46,8 +54,13 @@ rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 
 # 1. Render the Zola site into dist/ (--force allows a non-standard output dir).
-echo "🌐 Building Zola site -> dist/"
-zola build --output-dir "$DIST_DIR" --force
+if [[ -n "${SITE_BASE_URL:-}" ]]; then
+    echo "🌐 Building Zola site -> dist/ (base_url $SITE_BASE_URL)"
+    zola build --base-url "$SITE_BASE_URL" --output-dir "$DIST_DIR" --force
+else
+    echo "🌐 Building Zola site -> dist/"
+    zola build --output-dir "$DIST_DIR" --force
+fi
 
 # 2. Compile Tailwind into dist/css/site.css. v4 has no config file: the theme
 #    tokens and scan roots live in styles/main.css via @theme and @source.
